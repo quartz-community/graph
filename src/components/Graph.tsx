@@ -23,6 +23,7 @@ export interface D3Config {
   showTags: boolean;
   focusOnHover?: boolean;
   enableRadial?: boolean;
+  splitNestedTags?: boolean;
 }
 
 export interface GraphOptions {
@@ -45,6 +46,7 @@ const defaultOptions: GraphOptions = {
     removeTags: [],
     focusOnHover: false,
     enableRadial: false,
+    splitNestedTags: false,
   },
   globalGraph: {
     drag: true,
@@ -60,6 +62,7 @@ const defaultOptions: GraphOptions = {
     removeTags: [],
     focusOnHover: true,
     enableRadial: true,
+    splitNestedTags: false,
   },
 };
 

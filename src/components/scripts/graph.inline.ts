@@ -2,14 +2,14 @@
 import {
   removeAllChildren,
   getBasePath,
-  getFullSlugFromUrl,
+  getFullSlug,
   simplifySlug,
   resolveBasePath,
 } from "@quartz-community/utils";
 
 (function () {
   function getSlugFromUrl() {
-    var slug = getFullSlugFromUrl();
+    var slug = getFullSlug(window);
     var base = getBasePath();
     if (base && slug.startsWith(base.replace(/^\//, ""))) {
       slug = slug.slice(base.replace(/^\//, "").length);

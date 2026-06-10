@@ -104,7 +104,8 @@
         "showTags": true,
         "removeTags": [],
         "focusOnHover": false,
-        "enableRadial": false
+        "enableRadial": false,
+        "splitNestedTags": false
       },
       "globalGraph": {
         "drag": true,
@@ -119,7 +120,8 @@
         "showTags": true,
         "removeTags": [],
         "focusOnHover": true,
-        "enableRadial": true
+        "enableRadial": true,
+        "splitNestedTags": false
       }
     },
     "components": {

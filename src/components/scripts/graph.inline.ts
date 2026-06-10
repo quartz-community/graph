@@ -111,6 +111,7 @@ import {
       var showTags = config.showTags;
       var focusOnHover = config.focusOnHover;
       var enableRadial = config.enableRadial;
+      var splitNestedTags = config.splitNestedTags;
 
       var data;
       try {
@@ -145,11 +146,30 @@ import {
           for (var i = 0; i < tags.length; i++) {
             var tag = tags[i];
             if (removeTags.indexOf(tag) === -1) {
-              var tagSlug = simplifySlug("tags/" + tag);
-              if (allTags.indexOf(tagSlug) === -1) {
-                allTags.push(tagSlug);
+              if (splitNestedTags && tag.indexOf("/") !== -1) {
+                var parts = tag.split("/");
+                var prevSlug = null;
+                for (var p = 0; p < parts.length; p++) {
+                  var partialTag = parts.slice(0, p + 1).join("/");
+                  var partialSlug = simplifySlug("tags/" + partialTag);
+                  if (allTags.indexOf(partialSlug) === -1) {
+                    allTags.push(partialSlug);
+                  }
+                  if (prevSlug !== null) {
+                    links.push({ source: partialSlug, target: prevSlug });
+                  }
+                  prevSlug = partialSlug;
+                }
+                // Link the page to the leaf tag
+                var leafSlug = simplifySlug("tags/" + tag);
+                links.push({ source: source, target: leafSlug });
+              } else {
+                var tagSlug = simplifySlug("tags/" + tag);
+                if (allTags.indexOf(tagSlug) === -1) {
+                  allTags.push(tagSlug);
+                }
+                links.push({ source: source, target: tagSlug });
               }
-              links.push({ source: source, target: tagSlug });
             }
           }
         }
@@ -191,7 +211,18 @@ import {
       var nodeMap = new Map();
       neighbourhood.forEach(function (url) {
         var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
+        var tagPath = isTag ? url.substring(5) : "";
+        var text;
+        if (isTag) {
+          if (splitNestedTags && tagPath.indexOf("/") !== -1) {
+            var leaf = tagPath.lastIndexOf("/");
+            text = "#" + tagPath.substring(leaf + 1);
+          } else {
+            text = "#" + tagPath;
+          }
+        } else {
+          text = data.get(url)?.title || url;
+        }
         var nodeTags = isTag ? [] : data.get(url)?.tags || [];
         var node = {
           id: url,

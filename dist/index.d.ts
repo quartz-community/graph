@@ -14,6 +14,7 @@ interface D3Config {
     showTags: boolean;
     focusOnHover?: boolean;
     enableRadial?: boolean;
+    splitNestedTags?: boolean;
 }
 interface GraphOptions {
     localGraph?: Partial<D3Config>;

@@ -180,6 +180,7 @@ import {
         }
       } else {
         validLinks.forEach(function (id) {
+          if (!showTags && id.startsWith("tags/")) return;
           neighbourhood.add(id);
         });
         for (var i = 0; i < allTags.length; i++) {

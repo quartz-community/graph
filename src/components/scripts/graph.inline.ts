@@ -87,7 +87,7 @@ import {
     }
 
     async function renderGraph(graph, fullSlug, renderGeneration) {
-      var slug = simplifySlug(fullSlug);
+      var slug = simplifySlug(decodeURIComponent(fullSlug));
       if (slug === "") slug = "index";
       var visited = getVisited();
       removeAllChildren(graph);
@@ -191,7 +191,7 @@ import {
       var nodeMap = new Map();
       neighbourhood.forEach(function (url) {
         var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
+        var text = isTag ? "#" + url.substring(5) : data.get(decodeURIComponent(url))?.title || url;
         var nodeTags = isTag ? [] : data.get(url)?.tags || [];
         var node = {
           id: url,
@@ -364,6 +364,7 @@ import {
             nodeData.label.alpha = 1;
             nodeData.label.scale.set(activeScale);
           } else {
+            nodeData.label.alpha = 0.8;
             nodeData.label.scale.set(defaultScale);
           }
         }

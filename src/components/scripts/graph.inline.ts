@@ -6,6 +6,7 @@ import {
   simplifySlug,
   resolveBasePath,
 } from "@quartz-community/utils";
+import { collapseThroughBases, isBaseSlug } from "../../shared/collapse-edges";
 
 (function () {
   function getSlugFromUrl() {
@@ -109,6 +110,7 @@ import {
       var opacityScale = config.opacityScale || 1;
       var removeTags = config.removeTags || [];
       var removeSlugs = config.removeSlugs || [];
+      var baseEmbeds = config.baseEmbeds || [];
       var showTags = config.showTags;
       var focusOnHover = config.focusOnHover;
       var enableRadial = config.enableRadial;
@@ -131,7 +133,7 @@ import {
       var width = graph.offsetWidth;
       var height = Math.max(graph.offsetHeight, 250);
 
-      var links = [];
+      var pageLinks = [];
       var allTags = [];
       var validLinks = new Set(data.keys());
 
@@ -140,9 +142,23 @@ import {
         for (var i = 0; i < outgoing.length; i++) {
           var dest = simplifySlug(outgoing[i]);
           if (validLinks.has(dest)) {
-            links.push({ source: source, target: dest });
+            pageLinks.push({ source: source, target: dest });
           }
         }
+      });
+
+      for (var i = 0; i < baseEmbeds.length; i++) {
+        var embedSource = simplifySlug(baseEmbeds[i].source);
+        var embedTarget = simplifySlug(baseEmbeds[i].target);
+        if (validLinks.has(embedSource) && validLinks.has(embedTarget)) {
+          pageLinks.push({ source: embedSource, target: embedTarget });
+        }
+      }
+
+      var links = collapseThroughBases(pageLinks);
+
+      data.forEach(function (details, source) {
+        if (isBaseSlug(source)) return;
 
         if (showTags) {
           var tags = details.tags || [];

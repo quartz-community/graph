@@ -8,6 +8,8 @@ import { i18n } from "../i18n";
 import style from "./styles/graph.scss";
 // @ts-expect-error - inline script imported as string by esbuild loader
 import script from "./scripts/graph.inline.ts";
+import type { Edge } from "../shared/collapse-edges";
+import { findBaseEmbedEdges } from "../shared/find-base-embeds";
 
 export interface D3Config {
   drag: boolean;
@@ -67,15 +69,38 @@ const defaultOptions: GraphOptions = {
 };
 
 export default ((userOpts?: Partial<GraphOptions>) => {
-  const Graph: QuartzComponent = ({ displayClass, cfg }: QuartzComponentProps) => {
+  // Cached across every page render within a single build: re-scanning every
+  // file's raw source for Base embeds on every single page would be O(pages^2).
+  let cachedBaseEmbeds: Edge[] | undefined;
+  let cachedForFiles: unknown;
+
+  const Graph: QuartzComponent = ({
+    displayClass,
+    cfg,
+    allFiles,
+    ctx,
+  }: QuartzComponentProps) => {
     const localGraph = { ...defaultOptions.localGraph, ...userOpts?.localGraph };
     const globalGraph = { ...defaultOptions.globalGraph, ...userOpts?.globalGraph };
+
+    const contentDir = (ctx as { argv?: { directory?: string } } | undefined)?.argv?.directory;
+    if (contentDir && cachedForFiles !== allFiles) {
+      const withSlug = (allFiles as { slug?: string; relativePath?: string }[]).filter(
+        (file): file is { slug: string; relativePath?: string } => typeof file.slug === "string",
+      );
+      cachedBaseEmbeds = findBaseEmbedEdges(withSlug, contentDir);
+      cachedForFiles = allFiles;
+    }
+    const baseEmbeds = cachedBaseEmbeds ?? [];
 
     return (
       <div class={classNames(displayClass, "graph")}>
         <h3>{i18n(cfg.locale ?? "en-US").components.graph.title}</h3>
         <div class="graph-outer">
-          <div class="graph-container" data-cfg={JSON.stringify(localGraph)}></div>
+          <div
+            class="graph-container"
+            data-cfg={JSON.stringify({ ...localGraph, baseEmbeds })}
+          ></div>
           <button class="global-graph-icon" aria-label="Global Graph">
             <svg
               version="1.1"
@@ -104,7 +129,10 @@ export default ((userOpts?: Partial<GraphOptions>) => {
           </button>
         </div>
         <div class="global-graph-outer">
-          <div class="global-graph-container" data-cfg={JSON.stringify(globalGraph)}></div>
+          <div
+            class="global-graph-container"
+            data-cfg={JSON.stringify({ ...globalGraph, baseEmbeds })}
+          ></div>
         </div>
       </div>
     );

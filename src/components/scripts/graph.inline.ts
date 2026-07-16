@@ -108,6 +108,7 @@ import {
       var fontSize = config.fontSize || 0.6;
       var opacityScale = config.opacityScale || 1;
       var removeTags = config.removeTags || [];
+      var removeSlugs = config.removeSlugs || [];
       var showTags = config.showTags;
       var focusOnHover = config.focusOnHover;
       var enableRadial = config.enableRadial;
@@ -117,7 +118,10 @@ import {
         var dataRaw = await fetchData;
         data = new Map();
         for (var key in dataRaw) {
-          data.set(simplifySlug(key), dataRaw[key]);
+          var dataSlug = simplifySlug(key);
+          if (removeSlugs.indexOf(dataSlug) === -1) {
+            data.set(dataSlug, dataRaw[key]);
+          }
         }
       } catch (err) {
         console.error("[Graph] Error loading data:", err);

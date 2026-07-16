@@ -11,6 +11,7 @@ interface D3Config {
     fontSize: number;
     opacityScale: number;
     removeTags: string[];
+    removeSlugs: string[];
     showTags: boolean;
     focusOnHover?: boolean;
     enableRadial?: boolean;

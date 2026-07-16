@@ -103,6 +103,7 @@
         "opacityScale": 1,
         "showTags": true,
         "removeTags": [],
+        "removeSlugs": [],
         "focusOnHover": false,
         "enableRadial": false
       },
@@ -118,6 +119,7 @@
         "opacityScale": 1,
         "showTags": true,
         "removeTags": [],
+        "removeSlugs": [],
         "focusOnHover": true,
         "enableRadial": true
       }

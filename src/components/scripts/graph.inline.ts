@@ -9,7 +9,18 @@ import {
 
 (function () {
   function getSlugFromUrl() {
-    var slug = getFullSlugFromUrl();
+    var rawSlug = getFullSlugFromUrl();
+    var slug;
+    try {
+      // location.pathname is percent-encoded for non-ASCII/reserved characters
+      // (CJK slugs, "{}", etc.), which otherwise fails to match the already-decoded
+      // keys in the fetched content index and link list.
+      slug = decodeURIComponent(rawSlug);
+    } catch (err) {
+      // Malformed escape sequence (e.g. a literal "%" not part of a valid
+      // encoding) - fall back to the raw value instead of throwing.
+      slug = rawSlug;
+    }
     var base = getBasePath();
     if (base && slug.startsWith(base.replace(/^\//, ""))) {
       slug = slug.slice(base.replace(/^\//, "").length);

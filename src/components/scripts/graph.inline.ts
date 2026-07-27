@@ -8,6 +8,14 @@ import {
 } from "@quartz-community/utils";
 
 (function () {
+  function safeDecode(str) {
+    try {
+      return decodeURIComponent(str);
+    } catch {
+      return str;
+    }
+  }
+
   function getSlugFromUrl() {
     var slug = getFullSlugFromUrl();
     var base = getBasePath();
@@ -87,8 +95,7 @@ import {
     }
 
     async function renderGraph(graph, fullSlug, renderGeneration) {
-      var slug = simplifySlug(fullSlug);
-      try { slug = decodeURIComponent(slug); } catch {}
+      var slug = safeDecode(simplifySlug(fullSlug));
       if (slug === "") slug = "index";
       var visited = getVisited();
       removeAllChildren(graph);
@@ -118,9 +125,7 @@ import {
         var dataRaw = await fetchData;
         data = new Map();
         for (var key in dataRaw) {
-          var cleanKey = simplifySlug(key);
-          try { cleanKey = decodeURIComponent(cleanKey); } catch {}
-          data.set(cleanKey, dataRaw[key]);
+          data.set(safeDecode(simplifySlug(key)), dataRaw[key]);
         }
       } catch (err) {
         console.error("[Graph] Error loading data:", err);
@@ -137,8 +142,7 @@ import {
       data.forEach(function (details, source) {
         var outgoing = details.links || [];
         for (var i = 0; i < outgoing.length; i++) {
-          var dest = simplifySlug(outgoing[i]);
-          try { dest = decodeURIComponent(dest); } catch {}
+          var dest = safeDecode(simplifySlug(outgoing[i]));
           if (validLinks.has(dest)) {
             links.push({ source: source, target: dest });
           }
@@ -149,8 +153,7 @@ import {
           for (var i = 0; i < tags.length; i++) {
             var tag = tags[i];
             if (removeTags.indexOf(tag) === -1) {
-              var tagSlug = simplifySlug("tags/" + tag);
-              try { tagSlug = decodeURIComponent(tagSlug); } catch {}
+              var tagSlug = safeDecode(simplifySlug("tags/" + tag));
               if (allTags.indexOf(tagSlug) === -1) {
                 allTags.push(tagSlug);
               }
@@ -199,9 +202,7 @@ import {
       var nodeMap = new Map();
       neighbourhood.forEach(function (url) {
         var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || (function(x) {
-          try { return decodeURIComponent(x); } catch { return x; }
-        })(url);
+        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || safeDecode(url);
         var nodeTags = isTag ? [] : data.get(url)?.tags || [];
         var node = {
           id: url,

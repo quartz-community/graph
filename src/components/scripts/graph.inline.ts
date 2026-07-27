@@ -181,13 +181,10 @@ import { safeDecodeURIComponent } from "../../util/lang";
         }
       } else {
         validLinks.forEach(function (id) {
-          if (!showTags && id.startsWith("tags/")) return;
           neighbourhood.add(id);
         });
-        if (showTags) {
-          for (var i = 0; i < allTags.length; i++) {
-            neighbourhood.add(allTags[i]);
-          }
+        for (var i = 0; i < allTags.length; i++) {
+          neighbourhood.add(allTags[i]);
         }
       }
 

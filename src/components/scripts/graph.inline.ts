@@ -88,6 +88,7 @@ import {
 
     async function renderGraph(graph, fullSlug, renderGeneration) {
       var slug = simplifySlug(fullSlug);
+      try { slug = decodeURIComponent(slug); } catch {}
       if (slug === "") slug = "index";
       var visited = getVisited();
       removeAllChildren(graph);
@@ -117,7 +118,9 @@ import {
         var dataRaw = await fetchData;
         data = new Map();
         for (var key in dataRaw) {
-          data.set(simplifySlug(key), dataRaw[key]);
+          var cleanKey = simplifySlug(key);
+          try { cleanKey = decodeURIComponent(cleanKey); } catch {}
+          data.set(cleanKey, dataRaw[key]);
         }
       } catch (err) {
         console.error("[Graph] Error loading data:", err);
@@ -135,6 +138,7 @@ import {
         var outgoing = details.links || [];
         for (var i = 0; i < outgoing.length; i++) {
           var dest = simplifySlug(outgoing[i]);
+          try { dest = decodeURIComponent(dest); } catch {}
           if (validLinks.has(dest)) {
             links.push({ source: source, target: dest });
           }
@@ -146,6 +150,7 @@ import {
             var tag = tags[i];
             if (removeTags.indexOf(tag) === -1) {
               var tagSlug = simplifySlug("tags/" + tag);
+              try { tagSlug = decodeURIComponent(tagSlug); } catch {}
               if (allTags.indexOf(tagSlug) === -1) {
                 allTags.push(tagSlug);
               }
@@ -180,10 +185,13 @@ import {
         }
       } else {
         validLinks.forEach(function (id) {
+          if (!showTags && id.startsWith("tags/")) return;
           neighbourhood.add(id);
         });
-        for (var i = 0; i < allTags.length; i++) {
-          neighbourhood.add(allTags[i]);
+        if (showTags) {
+          for (var i = 0; i < allTags.length; i++) {
+            neighbourhood.add(allTags[i]);
+          }
         }
       }
 
@@ -191,7 +199,9 @@ import {
       var nodeMap = new Map();
       neighbourhood.forEach(function (url) {
         var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
+        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || (function(x) {
+          try { return decodeURIComponent(x); } catch { return x; }
+        })(url);
         var nodeTags = isTag ? [] : data.get(url)?.tags || [];
         var node = {
           id: url,

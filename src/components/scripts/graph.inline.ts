@@ -113,13 +113,22 @@ import {
       var enableRadial = config.enableRadial;
       var initialZoom = config.initialZoom || 1;
       var nodeColorRules = config.nodeColors || [];
+      var topLabelFraction = config.topLabelFraction || 0;
+      var excludeSlugs = config.excludeSlugs || [];
+      var excludeSet = new Set(
+        excludeSlugs.map(function (s) {
+          return simplifySlug(s);
+        }),
+      );
 
       var data;
       try {
         var dataRaw = await fetchData;
         data = new Map();
         for (var key in dataRaw) {
-          data.set(simplifySlug(key), dataRaw[key]);
+          var simplifiedKey = simplifySlug(key);
+          if (excludeSet.has(simplifiedKey)) continue;
+          data.set(simplifiedKey, dataRaw[key]);
         }
       } catch (err) {
         console.error("[Graph] Error loading data:", err);
@@ -193,7 +202,8 @@ import {
       var nodeMap = new Map();
       neighbourhood.forEach(function (url) {
         var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
+        var rawText = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
+        var text = rawText.length > 30 ? rawText.slice(0, 30).trimEnd() + "…" : rawText;
         var nodeTags = isTag ? [] : data.get(url)?.tags || [];
         var node = {
           id: url,
@@ -217,6 +227,35 @@ import {
           if (sourceNode && targetNode) {
             graphLinks.push({ source: sourceNode, target: targetNode });
           }
+        }
+      }
+
+      var degreeMap = new Map();
+      for (var i = 0; i < graphLinks.length; i++) {
+        var gl = graphLinks[i];
+        degreeMap.set(gl.source.id, (degreeMap.get(gl.source.id) || 0) + 1);
+        degreeMap.set(gl.target.id, (degreeMap.get(gl.target.id) || 0) + 1);
+      }
+
+      function nodeRadius(d) {
+        return 2 + Math.sqrt(degreeMap.get(d.id) || 0);
+      }
+
+      // Interactive radius used for hover/click/drag hit-testing — floored well above
+      // the visual radius so low-degree nodes (which render as tiny circles) aren't
+      // finicky to hover.
+      function nodeHitRadius(d) {
+        return Math.max(nodeRadius(d) + 4, 10);
+      }
+
+      var importantNodeIds = new Set();
+      if (topLabelFraction > 0) {
+        var sortedByDegree = nodes.slice().sort(function (a, b) {
+          return (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0);
+        });
+        var topCount = Math.max(1, Math.ceil(sortedByDegree.length * topLabelFraction));
+        for (var i = 0; i < topCount && i < sortedByDegree.length; i++) {
+          importantNodeIds.add(sortedByDegree[i].id);
         }
       }
 
@@ -259,21 +298,7 @@ import {
         .force("charge", d3.forceManyBody().strength(-100 * repelForce))
         .force("center", d3.forceCenter().strength(centerForce))
         .force("link", d3.forceLink(graphLinks).distance(linkDistance))
-        .force(
-          "collide",
-          d3
-            .forceCollide()
-            .radius(function (d) {
-              var numLinks = 0;
-              for (var i = 0; i < graphLinks.length; i++) {
-                if (graphLinks[i].source.id === d.id || graphLinks[i].target.id === d.id) {
-                  numLinks++;
-                }
-              }
-              return 2 + Math.sqrt(numLinks);
-            })
-            .iterations(3),
-        );
+        .force("collide", d3.forceCollide().radius(nodeRadius).iterations(3));
 
       if (enableRadial) {
         var radius = (Math.min(width, height) / 2) * 0.8;
@@ -294,16 +319,7 @@ import {
       var dragStartTime = 0;
       var dragging = false;
       var currentTransform = d3.zoomIdentity;
-
-      function nodeRadius(d) {
-        var numLinks = 0;
-        for (var i = 0; i < graphLinks.length; i++) {
-          if (graphLinks[i].source.id === d.id || graphLinks[i].target.id === d.id) {
-            numLinks++;
-          }
-        }
-        return 2 + Math.sqrt(numLinks);
-      }
+      var currentScaleOpacity = Math.max((initialZoom * opacityScale - 1) / 3.75, 0);
 
       function pathNodeColor(id) {
         var lowerId = id.toLowerCase();
@@ -382,16 +398,64 @@ import {
         }
       }
 
+      function createLabelText(nodeData) {
+        var label = new PIXI.Text({
+          text: nodeData.simulationData.text,
+          style: {
+            fontSize: fontSize * 15,
+            fill: dark,
+            fontFamily: bodyFont,
+          },
+          resolution: Math.min(window.devicePixelRatio || 1, 2),
+        });
+        label.anchor.set(0.5, 1.2);
+        label.alpha = 0;
+        label.scale.set(1 / scale);
+        var x = nodeData.simulationData.x;
+        var y = nodeData.simulationData.y;
+        if (x != null && y != null) {
+          label.position.set(x + width / 2, y + height / 2);
+        }
+        labelsContainer.addChild(label);
+        return label;
+      }
+
+      function destroyLabel(nodeData) {
+        if (!nodeData.label) return;
+        nodeData.label.destroy({ style: true, texture: true, textureSource: true });
+        nodeData.label = null;
+      }
+
       function renderLabels() {
         var defaultScale = 1 / scale;
         var activeScale = defaultScale * 1.1;
 
         for (var i = 0; i < nodeRenderData.length; i++) {
           var nodeData = nodeRenderData[i];
-          if (hoveredNodeId === nodeData.simulationData.id) {
+          var isHovered = hoveredNodeId === nodeData.simulationData.id;
+          var shouldExist, targetAlpha;
+
+          if (topLabelFraction > 0) {
+            shouldExist = nodeData.active || (nodeData.important && currentScaleOpacity > 0);
+            targetAlpha = nodeData.active ? 1 : currentScaleOpacity;
+          } else {
+            shouldExist = nodeData.active || currentScaleOpacity > 0;
+            targetAlpha = nodeData.active ? 1 : currentScaleOpacity;
+          }
+
+          if (shouldExist && !nodeData.label) {
+            nodeData.label = createLabelText(nodeData);
+          } else if (!shouldExist && nodeData.label) {
+            destroyLabel(nodeData);
+            continue;
+          }
+          if (!nodeData.label) continue;
+
+          if (isHovered) {
             nodeData.label.alpha = 1;
             nodeData.label.scale.set(activeScale);
           } else {
+            nodeData.label.alpha = targetAlpha;
             nodeData.label.scale.set(defaultScale);
           }
         }
@@ -421,20 +485,6 @@ import {
         var radius = nodeRadius(node);
         var color = nodeColor(node);
 
-        var label = new PIXI.Text({
-          text: node.text,
-          style: {
-            fontSize: fontSize * 15,
-            fill: dark,
-            fontFamily: bodyFont,
-          },
-          resolution: window.devicePixelRatio * 4,
-        });
-        label.anchor.set(0.5, 1.2);
-        label.alpha = 0;
-        label.scale.set(1 / scale);
-        labelsContainer.addChild(label);
-
         var gfx = new PIXI.Graphics();
         gfx.circle(0, 0, radius);
         gfx.fill({ color: isTagNode ? light : color });
@@ -445,12 +495,11 @@ import {
         gfx.eventMode = "static";
         gfx.cursor = "pointer";
         gfx.label = nodeId;
+        gfx.hitArea = new PIXI.Circle(0, 0, nodeHitRadius(node));
 
-        (function (n, g, labelRef) {
-          var oldLabelOpacity = 0;
+        (function (n, g) {
           g.on("pointerover", function (e) {
             updateHoverInfo(n.id);
-            oldLabelOpacity = labelRef.alpha;
             if (!dragging) {
               renderPixiFromD3();
             }
@@ -458,22 +507,22 @@ import {
 
           g.on("pointerleave", function () {
             updateHoverInfo(null);
-            labelRef.alpha = oldLabelOpacity;
             if (!dragging) {
               renderPixiFromD3();
             }
           });
-        })(node, gfx, label);
+        })(node, gfx);
 
         nodesContainer.addChild(gfx);
 
         nodeRenderData.push({
           simulationData: node,
           gfx: gfx,
-          label: label,
+          label: null,
           color: color,
           alpha: 1,
           active: false,
+          important: importantNodeIds.has(nodeId),
         });
       }
 
@@ -502,8 +551,8 @@ import {
             var dx = mouseX - n.x - width / 2;
             var dy = mouseY - n.y - height / 2;
             var dist = Math.sqrt(dx * dx + dy * dy);
-            var rad = nodeRadius(n);
-            if (dist < rad + 5) {
+            var rad = nodeHitRadius(n);
+            if (dist < rad) {
               return n;
             }
           }
@@ -572,22 +621,8 @@ import {
           stage.scale.set(currentTransform.k, currentTransform.k);
           stage.position.set(currentTransform.x, currentTransform.y);
 
-          var newScale = currentTransform.k * opacityScale;
-          var scaleOpacity = Math.max((newScale - 1) / 3.75, 0);
-
-          var activeLabels = [];
-          for (var i = 0; i < nodeRenderData.length; i++) {
-            if (nodeRenderData[i].active) {
-              activeLabels.push(nodeRenderData[i].label);
-            }
-          }
-
-          for (var i = 0; i < labelsContainer.children.length; i++) {
-            var label = labelsContainer.children[i];
-            if (activeLabels.indexOf(label) === -1) {
-              label.alpha = scaleOpacity;
-            }
-          }
+          currentScaleOpacity = Math.max((currentTransform.k * opacityScale - 1) / 3.75, 0);
+          renderLabels();
         };
 
         var zoom = d3

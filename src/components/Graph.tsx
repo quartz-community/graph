@@ -33,6 +33,12 @@ export interface D3Config {
   /** Initial d3-zoom scale factor applied on render (1 = no zoom). Lets a small
    * preview box start zoomed out even though the force layout itself is unchanged. */
   initialZoom?: number;
+  /** Fraction (0-1) of nodes, ranked by degree, that always show a label (subject to
+   * the normal opacityScale zoom fade-in). 0 disables this and falls back to the
+   * default behavior where every node's label can become ambient-visible on zoom;
+   * when >0, only this top fraction ever fades in ambiently and every other node's
+   * label only appears while hovering it or one of its direct neighbours. */
+  topLabelFraction?: number;
 }
 
 export interface GraphOptions {
@@ -46,6 +52,11 @@ export interface GraphOptions {
    * wins. Does not override the current-page highlight, but takes precedence over
    * the visited-page color. */
   nodeColors?: NodeColorRule[];
+  /** Slugs to exclude entirely from every graph view (local, global, and index
+   * preview). Excluded pages never appear as nodes and any links to/from them
+   * are dropped too. Use for pages that shouldn't show up in the graph despite
+   * still being rendered as standalone pages (e.g. an Obsidian Bases view). */
+  excludeSlugs?: string[];
 }
 
 const defaultOptions: GraphOptions = {
@@ -78,18 +89,39 @@ const defaultOptions: GraphOptions = {
     removeTags: [],
     focusOnHover: true,
     enableRadial: true,
+    topLabelFraction: 0.01,
   },
+};
+
+/** Applied on top of globalGraph for the index-page preview box only: opacityScale: 0
+ * makes the zoom-driven ambient label fade-in permanently inert (the graph is small and
+ * decorative there), so labels only ever appear on hover. */
+const indexPreviewDefaults: Partial<D3Config> = {
+  opacityScale: 0,
 };
 
 export default ((userOpts?: Partial<GraphOptions>) => {
   const Graph: QuartzComponent = ({ displayClass, cfg, fileData }: QuartzComponentProps) => {
     const nodeColors = userOpts?.nodeColors ?? [];
-    const localGraph = { ...defaultOptions.localGraph, ...userOpts?.localGraph, nodeColors };
-    const globalGraph = { ...defaultOptions.globalGraph, ...userOpts?.globalGraph, nodeColors };
+    const excludeSlugs = userOpts?.excludeSlugs ?? [];
+    const localGraph = {
+      ...defaultOptions.localGraph,
+      ...userOpts?.localGraph,
+      nodeColors,
+      excludeSlugs,
+    };
+    const globalGraph = {
+      ...defaultOptions.globalGraph,
+      ...userOpts?.globalGraph,
+      nodeColors,
+      excludeSlugs,
+    };
     // index.md is an unlinked landing page, so its local neighbourhood is empty —
     // show the global graph in the preview slot there instead.
     const previewGraph =
-      fileData.slug === "index" ? { ...globalGraph, ...userOpts?.indexPreview } : localGraph;
+      fileData.slug === "index"
+        ? { ...globalGraph, ...indexPreviewDefaults, ...userOpts?.indexPreview }
+        : localGraph;
 
     return (
       <div class={classNames(displayClass, "graph")}>

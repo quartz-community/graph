@@ -111,6 +111,8 @@ import {
       var showTags = config.showTags;
       var focusOnHover = config.focusOnHover;
       var enableRadial = config.enableRadial;
+      var initialZoom = config.initialZoom || 1;
+      var nodeColorRules = config.nodeColors || [];
 
       var data;
       try {
@@ -227,6 +229,15 @@ import {
       var light = resolveColor(styles.getPropertyValue("--light").trim(), "#f5f5f5");
       var bodyFont = styles.getPropertyValue("--bodyFont").trim() || "inherit";
 
+      var nodeColors = [];
+      for (var i = 0; i < nodeColorRules.length; i++) {
+        var rule = nodeColorRules[i];
+        if (!rule || !rule.path || !rule.color) continue;
+        var rulePath = String(rule.path).replace(/^\/+|\/+$/g, "").toLowerCase();
+        if (!rulePath) continue;
+        nodeColors.push({ path: rulePath, color: resolveColor(rule.color, rule.color) });
+      }
+
       var app = new PIXI.Application();
       await app.init({
         width: width,
@@ -294,10 +305,27 @@ import {
         return 2 + Math.sqrt(numLinks);
       }
 
+      function pathNodeColor(id) {
+        var lowerId = id.toLowerCase();
+        var best = null;
+        for (var i = 0; i < nodeColors.length; i++) {
+          var rule = nodeColors[i];
+          if (lowerId === rule.path || lowerId.indexOf(rule.path + "/") === 0) {
+            if (!best || rule.path.length > best.path.length) {
+              best = rule;
+            }
+          }
+        }
+        return best ? best.color : null;
+      }
+
       function nodeColor(d) {
         var isCurrent = d.id === slug;
+        var pathColor = pathNodeColor(d.id);
         if (isCurrent) {
           return secondary;
+        } else if (pathColor) {
+          return pathColor;
         } else if (visited.has(d.id) || d.id.startsWith("tags/")) {
           return tertiary;
         } else {
@@ -568,10 +596,14 @@ import {
             [0, 0],
             [width, height],
           ])
-          .scaleExtent([0.25, 4])
+          .scaleExtent([Math.min(0.25, initialZoom), 4])
           .on("zoom", zoomed);
 
         d3.select(app.canvas).call(zoom);
+
+        if (initialZoom !== 1) {
+          zoom.scaleTo(d3.select(app.canvas), initialZoom);
+        }
       }
 
       var stopAnimation = false;

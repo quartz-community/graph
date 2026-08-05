@@ -9,6 +9,13 @@ import style from "./styles/graph.scss";
 // @ts-expect-error - inline script imported as string by esbuild loader
 import script from "./scripts/graph.inline.ts";
 
+export interface NodeColorRule {
+  /** Content path prefix (relative to the content root, e.g. "topics/Concept"). */
+  path: string;
+  /** CSS color applied to nodes whose slug falls under this path. */
+  color: string;
+}
+
 export interface D3Config {
   drag: boolean;
   zoom: boolean;
@@ -23,11 +30,22 @@ export interface D3Config {
   showTags: boolean;
   focusOnHover?: boolean;
   enableRadial?: boolean;
+  /** Initial d3-zoom scale factor applied on render (1 = no zoom). Lets a small
+   * preview box start zoomed out even though the force layout itself is unchanged. */
+  initialZoom?: number;
 }
 
 export interface GraphOptions {
   localGraph?: Partial<D3Config>;
   globalGraph?: Partial<D3Config>;
+  /** Overrides applied on top of globalGraph for the index-page preview box only. */
+  indexPreview?: Partial<D3Config>;
+  /** Color overrides for nodes based on their content path, applied consistently
+   * across every graph view (local, global, and index preview) for UI consistency.
+   * When several rules match a node, the rule with the longest (most specific) path
+   * wins. Does not override the current-page highlight, but takes precedence over
+   * the visited-page color. */
+  nodeColors?: NodeColorRule[];
 }
 
 const defaultOptions: GraphOptions = {
@@ -64,15 +82,20 @@ const defaultOptions: GraphOptions = {
 };
 
 export default ((userOpts?: Partial<GraphOptions>) => {
-  const Graph: QuartzComponent = ({ displayClass, cfg }: QuartzComponentProps) => {
-    const localGraph = { ...defaultOptions.localGraph, ...userOpts?.localGraph };
-    const globalGraph = { ...defaultOptions.globalGraph, ...userOpts?.globalGraph };
+  const Graph: QuartzComponent = ({ displayClass, cfg, fileData }: QuartzComponentProps) => {
+    const nodeColors = userOpts?.nodeColors ?? [];
+    const localGraph = { ...defaultOptions.localGraph, ...userOpts?.localGraph, nodeColors };
+    const globalGraph = { ...defaultOptions.globalGraph, ...userOpts?.globalGraph, nodeColors };
+    // index.md is an unlinked landing page, so its local neighbourhood is empty —
+    // show the global graph in the preview slot there instead.
+    const previewGraph =
+      fileData.slug === "index" ? { ...globalGraph, ...userOpts?.indexPreview } : localGraph;
 
     return (
       <div class={classNames(displayClass, "graph")}>
         <h3>{i18n(cfg.locale ?? "en-US").components.graph.title}</h3>
         <div class="graph-outer">
-          <div class="graph-container" data-cfg={JSON.stringify(localGraph)}></div>
+          <div class="graph-container" data-cfg={JSON.stringify(previewGraph)}></div>
           <button class="global-graph-icon" aria-label="Global Graph">
             <svg
               version="1.1"

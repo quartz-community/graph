@@ -80,9 +80,22 @@ interface D3Config {
   enableRadial?: boolean;
 }
 
+interface NodeColorRule {
+  /** Content path prefix (relative to the content root, e.g. "topics/Concept") */
+  path: string;
+  /** CSS color applied to nodes whose slug falls under this path */
+  color: string;
+}
+
 interface GraphOptions {
   localGraph?: Partial<D3Config>; // Local page graph config
   globalGraph?: Partial<D3Config>; // Global graph config
+  indexPreview?: Partial<D3Config>; // Overrides for the index-page preview box
+  /** Color overrides for nodes based on their content path, applied consistently
+   * across every graph view (local, global, and index preview). The most specific
+   * (longest) matching path wins. Does not override the current-page highlight,
+   * but takes precedence over the visited-page color. */
+  nodeColors?: NodeColorRule[];
 }
 ```
 

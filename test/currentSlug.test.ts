@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveGraphSlug } from "../src/components/scripts/currentSlug";
+import { getCurrentGraphSlug, resolveGraphSlug } from "../src/components/scripts/currentSlug";
 
 describe("resolveGraphSlug", () => {
   it("canonicalizes a Quartz folder-page body slug to the graph index key", () => {
@@ -60,5 +60,28 @@ describe("resolveGraphSlug", () => {
         basePath: "/archive",
       }),
     ).toBe("archives/projects/example/");
+  });
+
+  it("uses Quartz's browser URL and base-path utilities for the fallback", () => {
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { pathname: "/archive/hermes/overview/" } },
+    });
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { body: { dataset: { basepath: "/archive" } } },
+    });
+
+    try {
+      expect(getCurrentGraphSlug()).toBe("hermes/overview");
+    } finally {
+      if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+      else Reflect.deleteProperty(globalThis, "window");
+      if (previousDocument) Object.defineProperty(globalThis, "document", previousDocument);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
   });
 });

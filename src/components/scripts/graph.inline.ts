@@ -1,25 +1,10 @@
 // @ts-nocheck
-import {
-  removeAllChildren,
-  getBasePath,
-  getFullSlugFromUrl,
-  simplifySlug,
-  resolveBasePath,
-} from "@quartz-community/utils";
-import { resolveGraphSlug } from "./currentSlug";
+import { removeAllChildren, simplifySlug, resolveBasePath } from "@quartz-community/utils";
+import { getCurrentGraphSlug } from "./currentSlug";
 
 (function () {
   function getSlugFromUrl() {
-    var canonicalSlug = document.body?.dataset?.slug;
-    if (canonicalSlug) {
-      return resolveGraphSlug({ canonicalSlug, urlSlug: "", basePath: "" });
-    }
-
-    return resolveGraphSlug({
-      canonicalSlug: undefined,
-      urlSlug: getFullSlugFromUrl(),
-      basePath: getBasePath(),
-    });
+    return getCurrentGraphSlug();
   }
 
   function loadScript(src) {

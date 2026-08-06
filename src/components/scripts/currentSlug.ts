@@ -1,9 +1,18 @@
-import { simplifySlug } from "@quartz-community/utils";
+import { getBasePath, getFullSlugFromUrl, simplifySlug } from "@quartz-community/utils";
 
 export interface GraphSlugInput {
   canonicalSlug?: string;
   urlSlug: string;
   basePath: string;
+}
+
+export function getCurrentGraphSlug(): string {
+  const canonicalSlug = document.body?.dataset?.slug;
+  return resolveGraphSlug({
+    canonicalSlug,
+    urlSlug: canonicalSlug ? "" : getFullSlugFromUrl(),
+    basePath: canonicalSlug ? "" : getBasePath(),
+  });
 }
 
 export function resolveGraphSlug({ canonicalSlug, urlSlug, basePath }: GraphSlugInput): string {

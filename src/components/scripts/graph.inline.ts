@@ -1,21 +1,10 @@
 // @ts-nocheck
-import {
-  removeAllChildren,
-  getBasePath,
-  getFullSlugFromUrl,
-  simplifySlug,
-  resolveBasePath,
-} from "@quartz-community/utils";
+import { removeAllChildren, simplifySlug, resolveBasePath } from "@quartz-community/utils";
+import { getCurrentGraphSlug } from "./currentSlug";
 
 (function () {
   function getSlugFromUrl() {
-    var slug = getFullSlugFromUrl();
-    var base = getBasePath();
-    if (base && slug.startsWith(base.replace(/^\//, ""))) {
-      slug = slug.slice(base.replace(/^\//, "").length);
-      if (slug.startsWith("/")) slug = slug.slice(1);
-    }
-    return slug;
+    return getCurrentGraphSlug();
   }
 
   function loadScript(src) {

@@ -27,6 +27,12 @@ describe("getCurrentSlug", () => {
     expect(getCurrentSlug()).toBe("Notes/Ubuntu-Über-Alles");
   });
 
+  it("treats an empty data-slug as missing and falls back to the URL", () => {
+    stubPage({ slug: "" }, "/features/Callouts");
+
+    expect(getCurrentSlug()).toBe("features/Callouts");
+  });
+
   it("falls back to the URL when <body> carries no slug", () => {
     stubPage({}, "/features/Callouts");
 

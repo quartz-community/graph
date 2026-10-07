@@ -6,6 +6,7 @@ import {
   simplifySlug,
   resolveBasePath,
 } from "@quartz-community/utils";
+import { safeDecodeURIComponent } from "../../util/lang";
 
 (function () {
   function getSlugFromUrl() {
@@ -87,7 +88,7 @@ import {
     }
 
     async function renderGraph(graph, fullSlug, renderGeneration) {
-      var slug = simplifySlug(fullSlug);
+      var slug = safeDecodeURIComponent(simplifySlug(fullSlug));
       if (slug === "") slug = "index";
       var visited = getVisited();
       removeAllChildren(graph);
@@ -117,7 +118,7 @@ import {
         var dataRaw = await fetchData;
         data = new Map();
         for (var key in dataRaw) {
-          data.set(simplifySlug(key), dataRaw[key]);
+          data.set(safeDecodeURIComponent(simplifySlug(key)), dataRaw[key]);
         }
       } catch (err) {
         console.error("[Graph] Error loading data:", err);
@@ -134,7 +135,7 @@ import {
       data.forEach(function (details, source) {
         var outgoing = details.links || [];
         for (var i = 0; i < outgoing.length; i++) {
-          var dest = simplifySlug(outgoing[i]);
+          var dest = safeDecodeURIComponent(simplifySlug(outgoing[i]));
           if (validLinks.has(dest)) {
             links.push({ source: source, target: dest });
           }
@@ -145,7 +146,7 @@ import {
           for (var i = 0; i < tags.length; i++) {
             var tag = tags[i];
             if (removeTags.indexOf(tag) === -1) {
-              var tagSlug = simplifySlug("tags/" + tag);
+              var tagSlug = safeDecodeURIComponent(simplifySlug("tags/" + tag));
               if (allTags.indexOf(tagSlug) === -1) {
                 allTags.push(tagSlug);
               }
@@ -191,7 +192,7 @@ import {
       var nodeMap = new Map();
       neighbourhood.forEach(function (url) {
         var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
+        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || safeDecodeURIComponent(url);
         var nodeTags = isTag ? [] : data.get(url)?.tags || [];
         var node = {
           id: url,

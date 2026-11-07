@@ -1,7 +1,7 @@
 export default {
   components: {
     graph: {
-      title: "Vue Graphique",
+      title: "Vue graphique",
     },
   },
 };

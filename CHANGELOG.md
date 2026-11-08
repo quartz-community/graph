@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+### Patch Changes
+
+- 4deeaaa: Use sentence case for the French graph title: "Vue graphique" instead of "Vue Graphique" (jackyzha0/quartz#2513).
+
 ## 1.0.0
 
 ### Major Changes

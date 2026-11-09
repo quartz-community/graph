@@ -1,6 +1,6 @@
 {
   "name": "@quartz-community/graph",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Interactive graph visualization component for Quartz - visualize your content as a network graph.",
   "type": "module",
   "license": "MIT",

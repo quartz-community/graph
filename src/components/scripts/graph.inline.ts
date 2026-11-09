@@ -1,23 +1,9 @@
 // @ts-nocheck
-import {
-  removeAllChildren,
-  getBasePath,
-  getFullSlugFromUrl,
-  simplifySlug,
-  resolveBasePath,
-} from "@quartz-community/utils";
+import { removeAllChildren, simplifySlug, resolveBasePath } from "@quartz-community/utils";
+
+import { getCurrentSlug } from "../../util/slug";
 
 (function () {
-  function getSlugFromUrl() {
-    var slug = getFullSlugFromUrl();
-    var base = getBasePath();
-    if (base && slug.startsWith(base.replace(/^\//, ""))) {
-      slug = slug.slice(base.replace(/^\//, "").length);
-      if (slug.startsWith("/")) slug = slug.slice(1);
-    }
-    return slug;
-  }
-
   function loadScript(src) {
     var existing = document.querySelector('script[src="' + src + '"]');
     if (existing) return Promise.resolve();
@@ -670,7 +656,7 @@ import {
 
     function showGlobalGraph() {
       cleanupGlobal();
-      var currentSlug = getSlugFromUrl();
+      var currentSlug = getCurrentSlug();
       for (var i = 0; i < globalContainers.length; i++) {
         var container = globalContainers[i];
         container.classList.add("active");
@@ -705,7 +691,7 @@ import {
     function renderLocal() {
       cleanupLocal();
       var thisGeneration = ++currentRenderGeneration;
-      var slug = getSlugFromUrl();
+      var slug = getCurrentSlug();
       addToVisited(slug);
 
       var localContainers = document.querySelectorAll(".graph-container");
@@ -725,7 +711,7 @@ import {
     }
 
     function handleNav(e) {
-      var slug = e.detail ? e.detail.url : getSlugFromUrl();
+      var slug = e.detail ? e.detail.url : getCurrentSlug();
       addToVisited(simplifySlug(slug));
 
       renderLocal();
@@ -785,10 +771,10 @@ import {
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
-        handleNav({ detail: { url: getSlugFromUrl() } });
+        handleNav({ detail: { url: getCurrentSlug() } });
       });
     } else {
-      handleNav({ detail: { url: getSlugFromUrl() } });
+      handleNav({ detail: { url: getCurrentSlug() } });
     }
     document.addEventListener("prenav", function () {
       cleanupLocal();

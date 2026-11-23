@@ -81,9 +81,68 @@ import {
       el.style.position = "absolute";
       el.style.visibility = "hidden";
       document.body.appendChild(el);
-      var resolved = getComputedStyle(el).color;
+      var resolved = parseRgb(getComputedStyle(el).color);
       el.remove();
-      return resolved || fallback;
+      return resolved ? resolved.color : fallback;
+    }
+
+    // Obsidian's graph takes its colours from hidden `.graph-view.color-*`
+    // elements, styled by `--graph-node`, `--graph-line`… or by a theme's rules
+    // on those classes. Read them the same way, so Obsidian themes (e.g. via
+    // @quartz-themes/core) colour this graph as they colour Obsidian's. Without
+    // such a theme, graph.scss gives these classes Quartz's palette.
+    var GRAPH_COLOR_CLASSES = {
+      node: "color-fill",
+      focused: "color-fill-focused",
+      tag: "color-fill-tag",
+      line: "color-line",
+      lineHighlight: "color-line-highlight",
+      text: "color-text",
+    };
+
+    // Computed colours can be oklch(), color(srgb …) or color-mix() results, which
+    // PixiJS can't parse. Painting one pixel converts any CSS colour to sRGB.
+    var colorCtx = null;
+    function parseRgb(value) {
+      if (!value) return null;
+      if (!colorCtx) {
+        var canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        colorCtx = canvas.getContext("2d", { willReadFrequently: true });
+      }
+      if (!colorCtx) return null;
+      colorCtx.clearRect(0, 0, 1, 1);
+      colorCtx.fillStyle = "rgba(0, 0, 0, 0)";
+      colorCtx.fillStyle = value;
+      colorCtx.fillRect(0, 0, 1, 1);
+      var d = colorCtx.getImageData(0, 0, 1, 1).data;
+      return { color: "rgb(" + d[0] + ", " + d[1] + ", " + d[2] + ")", alpha: d[3] / 255 };
+    }
+
+    function readGraphColors(container) {
+      var holder = document.createElement("div");
+      holder.setAttribute("aria-hidden", "true");
+      holder.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;visibility:hidden";
+      var els = {};
+      for (var key in GRAPH_COLOR_CLASSES) {
+        var el = document.createElement("div");
+        el.className = "graph-view " + GRAPH_COLOR_CLASSES[key];
+        holder.appendChild(el);
+        els[key] = el;
+      }
+      container.appendChild(holder);
+      var out = {};
+      for (var key in els) {
+        var cs = getComputedStyle(els[key]);
+        var c = parseRgb(cs.color);
+        if (c) {
+          var opacity = parseFloat(cs.opacity);
+          if (!isNaN(opacity)) c.alpha *= opacity;
+        }
+        out[key] = c;
+      }
+      holder.remove();
+      return out;
     }
 
     async function renderGraph(graph, fullSlug, renderGeneration) {
@@ -227,6 +286,18 @@ import {
       var light = resolveColor(styles.getPropertyValue("--light").trim(), "#f5f5f5");
       var bodyFont = styles.getPropertyValue("--bodyFont").trim() || "inherit";
 
+      var themed = readGraphColors(graph);
+      var pick = function (key, fallback) {
+        return themed[key] || { color: fallback, alpha: 1 };
+      };
+      var nodeFill = pick("node", gray);
+      var focusedFill = pick("focused", secondary);
+      var tagStroke = pick("tag", tertiary);
+      var lineColor = pick("line", lightgray);
+      var lineHighlight = pick("lineHighlight", gray);
+      var labelColor = pick("text", dark);
+      var visitedFill = { color: tertiary, alpha: 1 };
+
       var app = new PIXI.Application();
       await app.init({
         width: width,
@@ -297,11 +368,13 @@ import {
       function nodeColor(d) {
         var isCurrent = d.id === slug;
         if (isCurrent) {
-          return secondary;
-        } else if (visited.has(d.id) || d.id.startsWith("tags/")) {
-          return tertiary;
+          return focusedFill;
+        } else if (d.id.startsWith("tags/")) {
+          return tagStroke;
+        } else if (visited.has(d.id)) {
+          return visitedFill;
         } else {
-          return gray;
+          return nodeFill;
         }
       }
 
@@ -350,7 +423,7 @@ import {
             alpha = linkData.active ? 1 : 0.2;
           }
           linkData.alpha = alpha;
-          linkData.color = linkData.active ? gray : lightgray;
+          linkData.color = linkData.active ? lineHighlight : lineColor;
         }
       }
 
@@ -397,7 +470,7 @@ import {
           text: node.text,
           style: {
             fontSize: fontSize * 15,
-            fill: dark,
+            fill: labelColor.color,
             fontFamily: bodyFont,
           },
           resolution: window.devicePixelRatio * 4,
@@ -409,9 +482,11 @@ import {
 
         var gfx = new PIXI.Graphics();
         gfx.circle(0, 0, radius);
-        gfx.fill({ color: isTagNode ? light : color });
         if (isTagNode) {
-          gfx.stroke({ width: 2, color: tertiary });
+          gfx.fill({ color: light });
+          gfx.stroke({ width: 2, color: color.color, alpha: color.alpha });
+        } else {
+          gfx.fill({ color: color.color, alpha: color.alpha });
         }
 
         gfx.eventMode = "static";
@@ -458,7 +533,7 @@ import {
         linkRenderData.push({
           simulationData: link,
           gfx: gfx,
-          color: lightgray,
+          color: lineColor,
           alpha: 1,
           active: false,
         });
@@ -601,7 +676,7 @@ import {
             l.gfx.clear();
             l.gfx.moveTo(sx + width / 2, sy + height / 2);
             l.gfx.lineTo(tx + width / 2, ty + height / 2);
-            l.gfx.stroke({ alpha: l.alpha, width: 1, color: l.color });
+            l.gfx.stroke({ alpha: l.alpha * l.color.alpha, width: 1, color: l.color.color });
           }
         }
 

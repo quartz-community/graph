@@ -32,42 +32,47 @@ import {
     });
   }
 
-  Promise.all([
-    // Exact versions (with their hashes), and PixiJS's minified build: the
-    // unminified one is 2.5 MB of script to parse on every page.
-    loadScript(
-      "https://cdn.jsdelivr.net/npm/d3@7.9.2/dist/d3.min.js",
-      "sha384-LxfWGZyh6PaLjBRPf7NWiEYs9Mn0UQ6ZmqbLLZhxlOBBNWF2a2K0Pfc5efkrNnhQ",
-    ),
-    loadScript(
-      "https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.js",
-      "sha384-IGfYrdVH+mWT/lAfomOiw9gRIY0pOGCN3enQE3TBB6FWluTVVh4hlXDzNotZYUcv",
-    ),
-  ])
-    .then(function () {
-      initGraph();
-    })
-    .catch(function (err) {
-      console.error("[Graph] Failed to load libraries:", err);
-      var containers = document.querySelectorAll(".graph-container");
-      for (var i = 0; i < containers.length; i++) {
-        containers[i].textContent = "Graph could not load. Check your network connection.";
-        containers[i].style.display = "flex";
-        containers[i].style.alignItems = "center";
-        containers[i].style.justifyContent = "center";
-        containers[i].style.color = "var(--gray)";
-        containers[i].style.fontSize = "0.9rem";
-      }
-    });
+  // d3 and PixiJS load when a graph is first drawn (a local graph scrolled into
+  // view, or the global graph opened), not on every page load: on phones the
+  // local graph sits below the article.
+  var librariesPromise = null;
+  function loadLibraries() {
+    if (!librariesPromise) {
+      librariesPromise = Promise.all([
+        // Exact versions (with their hashes), and PixiJS's minified build: the
+        // unminified one is 2.5 MB of script to parse.
+        loadScript(
+          "https://cdn.jsdelivr.net/npm/d3@7.9.2/dist/d3.min.js",
+          "sha384-LxfWGZyh6PaLjBRPf7NWiEYs9Mn0UQ6ZmqbLLZhxlOBBNWF2a2K0Pfc5efkrNnhQ",
+        ),
+        loadScript(
+          "https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.js",
+          "sha384-IGfYrdVH+mWT/lAfomOiw9gRIY0pOGCN3enQE3TBB6FWluTVVh4hlXDzNotZYUcv",
+        ),
+      ]).catch(function (err) {
+        // Try again on the next render.
+        librariesPromise = null;
+        throw err;
+      });
+    }
+    return librariesPromise;
+  }
+
+  function showLoadError(container) {
+    container.textContent = "Graph could not load. Check your network connection.";
+    container.style.display = "flex";
+    container.style.alignItems = "center";
+    container.style.justifyContent = "center";
+    container.style.color = "var(--gray)";
+    container.style.fontSize = "0.9rem";
+  }
+
+  initGraph();
 
   function initGraph() {
-    var d3 = window.d3;
-    var PIXI = window.PIXI;
-
-    if (!d3 || !PIXI) {
-      console.error("[Graph] Libraries not loaded");
-      return;
-    }
+    // Set by renderGraph once the libraries have loaded.
+    var d3;
+    var PIXI;
 
     var localStorageKey = "graph-visited";
 
@@ -162,6 +167,20 @@ import {
 
       if (renderGeneration !== undefined && renderGeneration !== currentRenderGeneration) {
         console.log("[Graph] Stale render, skipping");
+        return function () {};
+      }
+
+      try {
+        await loadLibraries();
+      } catch (err) {
+        console.error("[Graph] Failed to load libraries:", err);
+        showLoadError(graph);
+        return function () {};
+      }
+      d3 = window.d3;
+      PIXI = window.PIXI;
+      // A navigation while the libraries loaded makes this render stale.
+      if (renderGeneration !== undefined && renderGeneration !== currentRenderGeneration) {
         return function () {};
       }
 
@@ -724,19 +743,38 @@ import {
       var slug = getSlugFromUrl();
       addToVisited(slug);
 
+      function render(container) {
+        renderGraph(container, slug, thisGeneration)
+          .then(function (cleanup) {
+            if (thisGeneration === currentRenderGeneration) {
+              localCleanups.push(cleanup);
+            } else {
+              cleanup();
+            }
+          })
+          .catch(function (err) {
+            console.error("[Graph] Local render error:", err);
+          });
+      }
+
+      // Drawn when about to scroll into view; a hidden graph (e.g. a sidebar a
+      // layout hides) is never drawn.
+      var observer = new IntersectionObserver(
+        function (entries) {
+          for (var i = 0; i < entries.length; i++) {
+            if (!entries[i].isIntersecting) continue;
+            observer.unobserve(entries[i].target);
+            render(entries[i].target);
+          }
+        },
+        { rootMargin: "200px" },
+      );
+      localCleanups.push(function () {
+        observer.disconnect();
+      });
       var localContainers = document.querySelectorAll(".graph-container");
       for (var i = 0; i < localContainers.length; i++) {
-        (function (container) {
-          renderGraph(container, slug, thisGeneration)
-            .then(function (cleanup) {
-              if (thisGeneration === currentRenderGeneration) {
-                localCleanups.push(cleanup);
-              }
-            })
-            .catch(function (err) {
-              console.error("[Graph] Local render error:", err);
-            });
-        })(localContainers[i]);
+        observer.observe(localContainers[i]);
       }
     }
 

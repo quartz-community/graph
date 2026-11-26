@@ -110,7 +110,7 @@ The Graph component fetches connection data from `/static/contentIndex.json` (ge
 - **D3** for physics simulation (force-directed layout)
 - **PixiJS** for high-performance WebGL rendering
 
-External libraries are loaded from CDN when the graph is first rendered.
+D3 and PixiJS are loaded from jsDelivr (pinned versions, with integrity checks) when the local graph scrolls into view or the global graph is opened, not on every page load.
 
 > [!info]
 > Graph View needs the content index, which is built into Quartz and on by default. Don't turn it off (`configuration.contentIndex: false`) when you use the graph.

@@ -18,12 +18,13 @@ import {
     return slug;
   }
 
-  function loadScript(src) {
+  function loadScript(src, integrity) {
     var existing = document.querySelector('script[src="' + src + '"]');
     if (existing) return Promise.resolve();
     return new Promise(function (resolve, reject) {
       var script = document.createElement("script");
       script.src = src;
+      script.integrity = integrity;
       script.crossOrigin = "anonymous";
       script.onload = resolve;
       script.onerror = reject;
@@ -32,8 +33,16 @@ import {
   }
 
   Promise.all([
-    loadScript("https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"),
-    loadScript("https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.js"),
+    // Exact versions (with their hashes), and PixiJS's minified build: the
+    // unminified one is 2.5 MB of script to parse on every page.
+    loadScript(
+      "https://cdn.jsdelivr.net/npm/d3@7.9.2/dist/d3.min.js",
+      "sha384-LxfWGZyh6PaLjBRPf7NWiEYs9Mn0UQ6ZmqbLLZhxlOBBNWF2a2K0Pfc5efkrNnhQ",
+    ),
+    loadScript(
+      "https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.js",
+      "sha384-IGfYrdVH+mWT/lAfomOiw9gRIY0pOGCN3enQE3TBB6FWluTVVh4hlXDzNotZYUcv",
+    ),
   ])
     .then(function () {
       initGraph();
@@ -187,15 +196,24 @@ import {
       var height = Math.max(graph.offsetHeight, 250);
 
       var links = [];
-      var allTags = [];
+      var allTags = new Set();
       var validLinks = new Set(data.keys());
+      // Neighbours of each node, for the local graph's breadth-first search.
+      var adjacency = new Map();
+      function addEdge(source, target) {
+        links.push({ source: source, target: target });
+        if (!adjacency.has(source)) adjacency.set(source, []);
+        if (!adjacency.has(target)) adjacency.set(target, []);
+        adjacency.get(source).push(target);
+        adjacency.get(target).push(source);
+      }
 
       data.forEach(function (details, source) {
         var outgoing = details.links || [];
         for (var i = 0; i < outgoing.length; i++) {
           var dest = simplifySlug(outgoing[i]);
           if (validLinks.has(dest)) {
-            links.push({ source: source, target: dest });
+            addEdge(source, dest);
           }
         }
 
@@ -205,10 +223,8 @@ import {
             var tag = tags[i];
             if (removeTags.indexOf(tag) === -1) {
               var tagSlug = simplifySlug("tags/" + tag);
-              if (allTags.indexOf(tagSlug) === -1) {
-                allTags.push(tagSlug);
-              }
-              links.push({ source: source, target: tagSlug });
+              allTags.add(tagSlug);
+              addEdge(source, tagSlug);
             }
           }
         }
@@ -223,15 +239,11 @@ import {
           for (var qi = 0; qi < queue.length; qi++) {
             var cur = queue[qi];
             neighbourhood.add(cur);
-            for (var li = 0; li < links.length; li++) {
-              var link = links[li];
-              if (link.source === cur && !seen.has(link.target)) {
-                seen.add(link.target);
-                nextQueue.push(link.target);
-              }
-              if (link.target === cur && !seen.has(link.source)) {
-                seen.add(link.source);
-                nextQueue.push(link.source);
+            var adjacent = adjacency.get(cur) || [];
+            for (var ai = 0; ai < adjacent.length; ai++) {
+              if (!seen.has(adjacent[ai])) {
+                seen.add(adjacent[ai]);
+                nextQueue.push(adjacent[ai]);
               }
             }
           }
@@ -241,9 +253,9 @@ import {
         validLinks.forEach(function (id) {
           neighbourhood.add(id);
         });
-        for (var i = 0; i < allTags.length; i++) {
-          neighbourhood.add(allTags[i]);
-        }
+        allTags.forEach(function (tag) {
+          neighbourhood.add(tag);
+        });
       }
 
       var nodes = [];
@@ -277,6 +289,18 @@ import {
         }
       }
 
+      // Links per node, counted once (the radius used to rescan every link per node).
+      var degree = new Map();
+      for (var i = 0; i < graphLinks.length; i++) {
+        var sid = graphLinks[i].source.id;
+        var tid = graphLinks[i].target.id;
+        degree.set(sid, (degree.get(sid) || 0) + 1);
+        degree.set(tid, (degree.get(tid) || 0) + 1);
+      }
+      function nodeRadius(d) {
+        return 2 + Math.sqrt(degree.get(d.id) || 0);
+      }
+
       var styles = getComputedStyle(document.documentElement);
       var secondary = resolveColor(styles.getPropertyValue("--secondary").trim(), "#c792ea");
       var tertiary = resolveColor(styles.getPropertyValue("--tertiary").trim(), "#82aaff");
@@ -307,7 +331,11 @@ import {
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
         eventMode: "static",
+        // Rendered on demand (see requestRender), not on every frame: a graph at
+        // rest costs nothing.
+        autoStart: false,
       });
+      app.ticker.stop();
 
       graph.appendChild(app.canvas);
 
@@ -319,51 +347,35 @@ import {
         .force("charge", d3.forceManyBody().strength(-100 * repelForce))
         .force("center", d3.forceCenter().strength(centerForce))
         .force("link", d3.forceLink(graphLinks).distance(linkDistance))
-        .force(
-          "collide",
-          d3
-            .forceCollide()
-            .radius(function (d) {
-              var numLinks = 0;
-              for (var i = 0; i < graphLinks.length; i++) {
-                if (graphLinks[i].source.id === d.id || graphLinks[i].target.id === d.id) {
-                  numLinks++;
-                }
-              }
-              return 2 + Math.sqrt(numLinks);
-            })
-            .iterations(3),
-        );
+        .force("collide", d3.forceCollide().radius(nodeRadius).iterations(3));
 
       if (enableRadial) {
         var radius = (Math.min(width, height) / 2) * 0.8;
         simulation.force("radial", d3.forceRadial(radius).strength(0.2));
       }
 
-      var linkContainer = new PIXI.Container();
+      // All links are drawn as one path per state (two Graphics objects), not one
+      // Graphics object per link, so a large graph is a couple of draw batches.
+      var linkGfx = new PIXI.Graphics();
+      var activeLinkGfx = new PIXI.Graphics();
+      linkGfx.eventMode = "none";
+      activeLinkGfx.eventMode = "none";
       var nodesContainer = new PIXI.Container();
       var labelsContainer = new PIXI.Container();
-      stage.addChild(linkContainer);
+      labelsContainer.eventMode = "none";
+      stage.addChild(linkGfx);
+      stage.addChild(activeLinkGfx);
       stage.addChild(nodesContainer);
       stage.addChild(labelsContainer);
 
       var nodeRenderData = [];
-      var linkRenderData = [];
       var hoveredNodeId = null;
       var hoveredNeighbours = new Set();
       var dragStartTime = 0;
       var dragging = false;
       var currentTransform = d3.zoomIdentity;
-
-      function nodeRadius(d) {
-        var numLinks = 0;
-        for (var i = 0; i < graphLinks.length; i++) {
-          if (graphLinks[i].source.id === d.id || graphLinks[i].target.id === d.id) {
-            numLinks++;
-          }
-        }
-        return 2 + Math.sqrt(numLinks);
-      }
+      // Labels fade in when zoomed in (and show for the hovered node).
+      var zoomLabelOpacity = 0;
 
       function nodeColor(d) {
         var isCurrent = d.id === slug;
@@ -378,96 +390,36 @@ import {
         }
       }
 
+      var renderQueued = false;
+      var stopAnimation = false;
+      function requestRender() {
+        if (renderQueued || stopAnimation) return;
+        renderQueued = true;
+        requestAnimationFrame(renderFrame);
+      }
+
       function updateHoverInfo(newHoveredId) {
         hoveredNodeId = newHoveredId;
-
-        if (newHoveredId === null) {
-          hoveredNeighbours = new Set();
-          for (var i = 0; i < nodeRenderData.length; i++) {
-            nodeRenderData[i].active = false;
-          }
-          for (var i = 0; i < linkRenderData.length; i++) {
-            linkRenderData[i].active = false;
-          }
-        } else {
-          hoveredNeighbours = new Set();
-
-          for (var i = 0; i < linkRenderData.length; i++) {
-            var linkData = linkRenderData[i].simulationData;
-            if (linkData.source.id === newHoveredId || linkData.target.id === newHoveredId) {
-              hoveredNeighbours.add(linkData.source.id);
-              hoveredNeighbours.add(linkData.target.id);
-              linkRenderData[i].active = true;
-            } else {
-              linkRenderData[i].active = false;
-            }
-          }
-
+        hoveredNeighbours = new Set();
+        if (newHoveredId !== null) {
           hoveredNeighbours.add(newHoveredId);
-
-          for (var i = 0; i < nodeRenderData.length; i++) {
-            if (hoveredNeighbours.has(nodeRenderData[i].simulationData.id)) {
-              nodeRenderData[i].active = true;
-            } else {
-              nodeRenderData[i].active = false;
+          for (var i = 0; i < graphLinks.length; i++) {
+            var l = graphLinks[i];
+            if (l.source.id === newHoveredId || l.target.id === newHoveredId) {
+              hoveredNeighbours.add(l.source.id);
+              hoveredNeighbours.add(l.target.id);
             }
           }
         }
+        requestRender();
       }
 
-      function renderLinks() {
-        for (var i = 0; i < linkRenderData.length; i++) {
-          var linkData = linkRenderData[i];
-          var alpha = 1;
-          if (hoveredNodeId !== null) {
-            alpha = linkData.active ? 1 : 0.2;
-          }
-          linkData.alpha = alpha;
-          linkData.color = linkData.active ? lineHighlight : lineColor;
-        }
-      }
-
-      function renderLabels() {
-        var defaultScale = 1 / scale;
-        var activeScale = defaultScale * 1.1;
-
-        for (var i = 0; i < nodeRenderData.length; i++) {
-          var nodeData = nodeRenderData[i];
-          if (hoveredNodeId === nodeData.simulationData.id) {
-            nodeData.label.alpha = 1;
-            nodeData.label.scale.set(activeScale);
-          } else {
-            nodeData.label.scale.set(defaultScale);
-          }
-        }
-      }
-
-      function renderNodes() {
-        for (var i = 0; i < nodeRenderData.length; i++) {
-          var nodeData = nodeRenderData[i];
-          var alpha = 1;
-          if (hoveredNodeId !== null && focusOnHover) {
-            alpha = nodeData.active ? 1 : 0.2;
-          }
-          nodeData.gfx.alpha = alpha;
-        }
-      }
-
-      function renderPixiFromD3() {
-        renderNodes();
-        renderLinks();
-        renderLabels();
-      }
-
-      for (var i = 0; i < nodes.length; i++) {
-        var node = nodes[i];
-        var nodeId = node.id;
-        var isTagNode = nodeId.startsWith("tags/");
-        var radius = nodeRadius(node);
-        var color = nodeColor(node);
-
+      // Text is rasterised into its own texture, so labels are created only when
+      // first shown, instead of one per node up front.
+      function ensureLabel(nodeData) {
+        if (nodeData.label) return nodeData.label;
         var label = new PIXI.Text({
-          text: node.text,
+          text: nodeData.simulationData.text,
           style: {
             fontSize: fontSize * 15,
             fill: labelColor.color,
@@ -476,12 +428,87 @@ import {
           resolution: window.devicePixelRatio * 4,
         });
         label.anchor.set(0.5, 1.2);
-        label.alpha = 0;
-        label.scale.set(1 / scale);
+        label.eventMode = "none";
         labelsContainer.addChild(label);
+        nodeData.label = label;
+        return label;
+      }
+
+      function drawLinks() {
+        linkGfx.clear();
+        activeLinkGfx.clear();
+        var cx = width / 2;
+        var cy = height / 2;
+        var anyActive = false;
+        for (var i = 0; i < graphLinks.length; i++) {
+          var l = graphLinks[i];
+          var active =
+            hoveredNodeId !== null &&
+            (l.source.id === hoveredNodeId || l.target.id === hoveredNodeId);
+          var g = active ? activeLinkGfx : linkGfx;
+          if (active) anyActive = true;
+          g.moveTo(l.source.x + cx, l.source.y + cy);
+          g.lineTo(l.target.x + cx, l.target.y + cy);
+        }
+        var dim = hoveredNodeId !== null ? 0.2 : 1;
+        if (graphLinks.length > 0) {
+          linkGfx.stroke({ width: 1, color: lineColor.color, alpha: dim * lineColor.alpha });
+        }
+        if (anyActive) {
+          activeLinkGfx.stroke({
+            width: 1,
+            color: lineHighlight.color,
+            alpha: lineHighlight.alpha,
+          });
+        }
+      }
+
+      function renderFrame() {
+        renderQueued = false;
+        if (stopAnimation) return;
+        var cx = width / 2;
+        var cy = height / 2;
+        var k = currentTransform.k;
+        // Visible area, in graph coordinates, for culling labels.
+        var minX = -currentTransform.x / k;
+        var minY = -currentTransform.y / k;
+        var maxX = minX + width / k;
+        var maxY = minY + height / k;
+        var defaultScale = 1 / scale;
+
+        for (var i = 0; i < nodeRenderData.length; i++) {
+          var n = nodeRenderData[i];
+          var d = n.simulationData;
+          var x = d.x + cx;
+          var y = d.y + cy;
+          n.gfx.position.set(x, y);
+          n.gfx.alpha =
+            hoveredNodeId !== null && focusOnHover && !hoveredNeighbours.has(d.id) ? 0.2 : 1;
+
+          var isHovered = d.id === hoveredNodeId;
+          var labelAlpha = isHovered ? 1 : zoomLabelOpacity;
+          var onScreen = x >= minX - 50 && x <= maxX + 50 && y >= minY - 20 && y <= maxY + 20;
+          if (labelAlpha > 0 && onScreen) {
+            var label = ensureLabel(n);
+            label.visible = true;
+            label.alpha = labelAlpha;
+            label.position.set(x, y);
+            label.scale.set(isHovered ? defaultScale * 1.1 : defaultScale);
+          } else if (n.label) {
+            n.label.visible = false;
+          }
+        }
+        drawLinks();
+        app.render();
+      }
+
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        var isTagNode = node.id.startsWith("tags/");
+        var color = nodeColor(node);
 
         var gfx = new PIXI.Graphics();
-        gfx.circle(0, 0, radius);
+        gfx.circle(0, 0, nodeRadius(node));
         if (isTagNode) {
           gfx.fill({ color: light });
           gfx.stroke({ width: 2, color: color.color, alpha: color.alpha });
@@ -491,52 +518,19 @@ import {
 
         gfx.eventMode = "static";
         gfx.cursor = "pointer";
-        gfx.label = nodeId;
+        gfx.label = node.id;
 
-        (function (n, g, labelRef) {
-          var oldLabelOpacity = 0;
-          g.on("pointerover", function (e) {
-            updateHoverInfo(n.id);
-            oldLabelOpacity = labelRef.alpha;
-            if (!dragging) {
-              renderPixiFromD3();
-            }
+        (function (n) {
+          gfx.on("pointerover", function () {
+            if (!dragging) updateHoverInfo(n.id);
           });
-
-          g.on("pointerleave", function () {
-            updateHoverInfo(null);
-            labelRef.alpha = oldLabelOpacity;
-            if (!dragging) {
-              renderPixiFromD3();
-            }
+          gfx.on("pointerleave", function () {
+            if (!dragging) updateHoverInfo(null);
           });
-        })(node, gfx, label);
+        })(node);
 
         nodesContainer.addChild(gfx);
-
-        nodeRenderData.push({
-          simulationData: node,
-          gfx: gfx,
-          label: label,
-          color: color,
-          alpha: 1,
-          active: false,
-        });
-      }
-
-      for (var i = 0; i < graphLinks.length; i++) {
-        var link = graphLinks[i];
-        var gfx = new PIXI.Graphics();
-        gfx.eventMode = "none";
-        linkContainer.addChild(gfx);
-
-        linkRenderData.push({
-          simulationData: link,
-          gfx: gfx,
-          color: lineColor,
-          alpha: 1,
-          active: false,
-        });
+        nodeRenderData.push({ simulationData: node, gfx: gfx, label: null });
       }
 
       if (enableDrag) {
@@ -548,9 +542,8 @@ import {
             var n = nodes[i];
             var dx = mouseX - n.x - width / 2;
             var dy = mouseY - n.y - height / 2;
-            var dist = Math.sqrt(dx * dx + dy * dy);
-            var rad = nodeRadius(n);
-            if (dist < rad + 5) {
+            var rad = nodeRadius(n) + 5;
+            if (dx * dx + dy * dy < rad * rad) {
               return n;
             }
           }
@@ -569,7 +562,7 @@ import {
           };
           dragStartTime = Date.now();
           dragging = true;
-          hoveredNodeId = event.subject.id;
+          updateHoverInfo(event.subject.id);
         };
 
         var dragDragged = function (event) {
@@ -585,7 +578,6 @@ import {
           event.subject.fy = null;
           dragging = false;
           updateHoverInfo(null);
-          renderPixiFromD3();
 
           if (Date.now() - dragStartTime < 500) {
             var target = resolveBasePath(event.subject.id);
@@ -618,23 +610,8 @@ import {
           currentTransform = event.transform;
           stage.scale.set(currentTransform.k, currentTransform.k);
           stage.position.set(currentTransform.x, currentTransform.y);
-
-          var newScale = currentTransform.k * opacityScale;
-          var scaleOpacity = Math.max((newScale - 1) / 3.75, 0);
-
-          var activeLabels = [];
-          for (var i = 0; i < nodeRenderData.length; i++) {
-            if (nodeRenderData[i].active) {
-              activeLabels.push(nodeRenderData[i].label);
-            }
-          }
-
-          for (var i = 0; i < labelsContainer.children.length; i++) {
-            var label = labelsContainer.children[i];
-            if (activeLabels.indexOf(label) === -1) {
-              label.alpha = scaleOpacity;
-            }
-          }
+          zoomLabelOpacity = Math.max((currentTransform.k * opacityScale - 1) / 3.75, 0);
+          requestRender();
         };
 
         var zoom = d3
@@ -649,45 +626,9 @@ import {
         d3.select(app.canvas).call(zoom);
       }
 
-      var stopAnimation = false;
-      function animate() {
-        if (stopAnimation) return;
-
-        for (var i = 0; i < nodeRenderData.length; i++) {
-          var n = nodeRenderData[i];
-          var x = n.simulationData.x;
-          var y = n.simulationData.y;
-          if (x != null && y != null) {
-            n.gfx.position.set(x + width / 2, y + height / 2);
-            if (n.label) {
-              n.label.position.set(x + width / 2, y + height / 2);
-            }
-          }
-        }
-
-        for (var i = 0; i < linkRenderData.length; i++) {
-          var l = linkRenderData[i];
-          var linkData = l.simulationData;
-          var sx = linkData.source.x;
-          var sy = linkData.source.y;
-          var tx = linkData.target.x;
-          var ty = linkData.target.y;
-          if (sx != null && sy != null && tx != null && ty != null) {
-            l.gfx.clear();
-            l.gfx.moveTo(sx + width / 2, sy + height / 2);
-            l.gfx.lineTo(tx + width / 2, ty + height / 2);
-            l.gfx.stroke({ alpha: l.alpha * l.color.alpha, width: 1, color: l.color.color });
-          }
-        }
-
-        requestAnimationFrame(animate);
-      }
-
-      simulation.on("tick", function () {});
+      simulation.on("tick", requestRender);
       simulation.restart();
-      renderPixiFromD3();
-      animate();
-
+      requestRender();
       return function () {
         stopAnimation = true;
         simulation.stop();

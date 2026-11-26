@@ -344,6 +344,11 @@ import { getCurrentGraphSlug } from "./currentSlug";
         autoStart: false,
       });
       app.ticker.stop();
+      // PixiJS's system ticker (pointer-over checks, the renderer's scheduled GC tasks) would
+      // otherwise keep a requestAnimationFrame loop running for as long as a graph exists, idle
+      // or not. It is advanced on the frames this graph renders instead (renderFrame).
+      PIXI.Ticker.system.autoStart = false;
+      PIXI.Ticker.system.stop();
 
       graph.appendChild(app.canvas);
 
@@ -400,8 +405,23 @@ import { getCurrentGraphSlug } from "./currentSlug";
 
       var renderQueued = false;
       var stopAnimation = false;
+      var dispose = function () {
+        stopAnimation = true;
+        simulation.stop();
+        try {
+          app.destroy(true);
+        } catch (_) {
+          // PixiJS may throw if WebGL context was already lost.
+        }
+      };
+
       function requestRender() {
         if (renderQueued || stopAnimation) return;
+        // removed from the page (e.g. its content replaced) without a cleanup: stop for good
+        if (!app.canvas.isConnected) {
+          dispose();
+          return;
+        }
         renderQueued = true;
         requestAnimationFrame(renderFrame);
       }
@@ -471,9 +491,10 @@ import { getCurrentGraphSlug } from "./currentSlug";
         }
       }
 
-      function renderFrame() {
+      function renderFrame(now) {
         renderQueued = false;
         if (stopAnimation) return;
+        PIXI.Ticker.system.update(now);
         var cx = width / 2;
         var cy = height / 2;
         var k = currentTransform.k;
@@ -634,18 +655,12 @@ import { getCurrentGraphSlug } from "./currentSlug";
         d3.select(app.canvas).call(zoom);
       }
 
+      // The simulation's timer runs until the layout settles (and again while a node is
+      // dragged); a frame is rendered per tick, and on zoom or hover. At rest nothing runs.
       simulation.on("tick", requestRender);
       simulation.restart();
       requestRender();
-      return function () {
-        stopAnimation = true;
-        simulation.stop();
-        try {
-          app.destroy(true);
-        } catch (_) {
-          // PixiJS may throw if WebGL context was already lost.
-        }
-      };
+      return dispose;
     }
 
     var localCleanups = [];

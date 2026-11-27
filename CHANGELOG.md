@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.9
+
+### Patch Changes
+
+- cfd7dd3: Graph options set to `0` (such as `centerForce: 0` or `repelForce: 0`) are applied instead of silently falling back to their defaults.
+
 ## 1.0.8
 
 ### Patch Changes

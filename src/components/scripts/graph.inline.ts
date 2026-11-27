@@ -2,6 +2,7 @@
 import { removeAllChildren, simplifySlug, resolveBasePath } from "@quartz-community/utils";
 import { getCurrentGraphSlug } from "./currentSlug";
 import { buildGraphData, contentBySlug } from "./graphData";
+import { readGraphConfig } from "./graphConfig";
 
 (function () {
   function getSlugFromUrl() {
@@ -174,17 +175,17 @@ import { buildGraphData, contentBySlug } from "./graphData";
         return function () {};
       }
 
-      var config = JSON.parse(graph.dataset["cfg"] || "{}");
+      var config = readGraphConfig(JSON.parse(graph.dataset["cfg"] || "{}"));
       var enableDrag = config.drag;
       var enableZoom = config.zoom;
       var depth = config.depth;
-      var scale = config.scale || 1;
-      var repelForce = config.repelForce || 0.5;
-      var centerForce = config.centerForce || 0.3;
-      var linkDistance = config.linkDistance || 30;
-      var fontSize = config.fontSize || 0.6;
-      var opacityScale = config.opacityScale || 1;
-      var removeTags = config.removeTags || [];
+      var scale = config.scale;
+      var repelForce = config.repelForce;
+      var centerForce = config.centerForce;
+      var linkDistance = config.linkDistance;
+      var fontSize = config.fontSize;
+      var opacityScale = config.opacityScale;
+      var removeTags = config.removeTags;
       var showTags = config.showTags;
       var focusOnHover = config.focusOnHover;
       var enableRadial = config.enableRadial;

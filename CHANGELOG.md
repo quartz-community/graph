@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10
+
+### Patch Changes
+
+- 0021fd8: The local graph is drawn once when a page loads; it was drawn twice (two simulations, one thrown away).
+
 ## 1.0.9
 
 ### Patch Changes

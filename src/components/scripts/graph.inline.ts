@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { removeAllChildren, simplifySlug, resolveBasePath } from "@quartz-community/utils";
 import { getCurrentGraphSlug } from "./currentSlug";
+import { buildGraphData, contentBySlug } from "./graphData";
 
 (function () {
   function getSlugFromUrl() {
@@ -190,11 +191,7 @@ import { getCurrentGraphSlug } from "./currentSlug";
 
       var data;
       try {
-        var dataRaw = await fetchData;
-        data = new Map();
-        for (var key in dataRaw) {
-          data.set(simplifySlug(key), dataRaw[key]);
-        }
+        data = contentBySlug(await fetchData);
       } catch (err) {
         console.error("[Graph] Error loading data:", err);
         return function () {};
@@ -203,108 +200,33 @@ import { getCurrentGraphSlug } from "./currentSlug";
       var width = graph.offsetWidth;
       var height = Math.max(graph.offsetHeight, 250);
 
-      var links = [];
-      var allTags = new Set();
-      var validLinks = new Set(data.keys());
-      // Neighbours of each node, for the local graph's breadth-first search.
-      var adjacency = new Map();
-      function addEdge(source, target) {
-        links.push({ source: source, target: target });
-        if (!adjacency.has(source)) adjacency.set(source, []);
-        if (!adjacency.has(target)) adjacency.set(target, []);
-        adjacency.get(source).push(target);
-        adjacency.get(target).push(source);
-      }
-
-      data.forEach(function (details, source) {
-        var outgoing = details.links || [];
-        for (var i = 0; i < outgoing.length; i++) {
-          var dest = simplifySlug(outgoing[i]);
-          if (validLinks.has(dest)) {
-            addEdge(source, dest);
-          }
-        }
-
-        if (showTags) {
-          var tags = details.tags || [];
-          for (var i = 0; i < tags.length; i++) {
-            var tag = tags[i];
-            if (removeTags.indexOf(tag) === -1) {
-              var tagSlug = simplifySlug("tags/" + tag);
-              allTags.add(tagSlug);
-              addEdge(source, tagSlug);
-            }
-          }
-        }
+      var graphData = buildGraphData(data, slug, {
+        depth: depth,
+        showTags: showTags,
+        removeTags: removeTags,
       });
-
-      var neighbourhood = new Set();
-      if (depth >= 0) {
-        var queue = [slug];
-        var seen = new Set([slug]);
-        for (var d = 0; d <= depth && queue.length > 0; d++) {
-          var nextQueue = [];
-          for (var qi = 0; qi < queue.length; qi++) {
-            var cur = queue[qi];
-            neighbourhood.add(cur);
-            var adjacent = adjacency.get(cur) || [];
-            for (var ai = 0; ai < adjacent.length; ai++) {
-              if (!seen.has(adjacent[ai])) {
-                seen.add(adjacent[ai]);
-                nextQueue.push(adjacent[ai]);
-              }
-            }
-          }
-          queue = nextQueue;
-        }
-      } else {
-        validLinks.forEach(function (id) {
-          neighbourhood.add(id);
-        });
-        allTags.forEach(function (tag) {
-          neighbourhood.add(tag);
-        });
-      }
 
       var nodes = [];
       var nodeMap = new Map();
-      neighbourhood.forEach(function (url) {
-        var isTag = url.startsWith("tags/");
-        var text = isTag ? "#" + url.substring(5) : data.get(url)?.title || url;
-        var nodeTags = isTag ? [] : data.get(url)?.tags || [];
+      graphData.nodes.forEach(function (n) {
         var node = {
-          id: url,
-          text: text,
-          tags: nodeTags,
+          id: n.id,
+          text: n.text,
+          tags: n.tags,
           x: Math.random() * width - width / 2,
           y: Math.random() * height - height / 2,
           vx: 0,
           vy: 0,
         };
         nodes.push(node);
-        nodeMap.set(url, node);
+        nodeMap.set(n.id, node);
       });
 
-      var graphLinks = [];
-      for (var i = 0; i < links.length; i++) {
-        var link = links[i];
-        if (neighbourhood.has(link.source) && neighbourhood.has(link.target)) {
-          var sourceNode = nodeMap.get(link.source);
-          var targetNode = nodeMap.get(link.target);
-          if (sourceNode && targetNode) {
-            graphLinks.push({ source: sourceNode, target: targetNode });
-          }
-        }
-      }
+      var graphLinks = graphData.links.map(function (link) {
+        return { source: nodeMap.get(link.source), target: nodeMap.get(link.target) };
+      });
 
-      // Links per node, counted once (the radius used to rescan every link per node).
-      var degree = new Map();
-      for (var i = 0; i < graphLinks.length; i++) {
-        var sid = graphLinks[i].source.id;
-        var tid = graphLinks[i].target.id;
-        degree.set(sid, (degree.get(sid) || 0) + 1);
-        degree.set(tid, (degree.get(tid) || 0) + 1);
-      }
+      var degree = graphData.degree;
       function nodeRadius(d) {
         return 2 + Math.sqrt(degree.get(d.id) || 0);
       }

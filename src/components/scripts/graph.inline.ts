@@ -764,18 +764,31 @@ import { readGraphConfig } from "./graphConfig";
       }
     }
 
+    // Draw once per page. This script draws the page it loads on itself, and Quartz then fires
+    // `nav` for that same page (after every script registered its listener), which drew the
+    // local graph a second time. Every navigation fires `prenav` first, which allows the next
+    // draw; `render` (a page's content replaced in place, e.g. an encrypted page unlocked)
+    // always redraws.
+    var drawnForPage = false;
+    function handleNavOnce(e) {
+      if (drawnForPage) return;
+      drawnForPage = true;
+      handleNav(e);
+    }
+
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
-        handleNav({ detail: { url: getSlugFromUrl() } });
+        handleNavOnce({ detail: { url: getSlugFromUrl() } });
       });
     } else {
-      handleNav({ detail: { url: getSlugFromUrl() } });
+      handleNavOnce({ detail: { url: getSlugFromUrl() } });
     }
     document.addEventListener("prenav", function () {
+      drawnForPage = false;
       cleanupLocal();
       cleanupGlobal();
     });
-    document.addEventListener("nav", handleNav);
+    document.addEventListener("nav", handleNavOnce);
     document.addEventListener("render", handleNav);
 
     function handleThemeChange() {
